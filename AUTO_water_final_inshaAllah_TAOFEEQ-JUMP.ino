@@ -1,0 +1,631 @@
+#include <Arduino.h>
+#include <LiquidCrystal_I2C.h>
+//
+LiquidCrystal_I2C lcd(0x3F,16,2); 
+//LiquidCrystal_I2C lcd(0x20,16,2); 
+#include <EEPROM.h>
+#include <SoftwareSerial.h>
+// Define SoftwareSerial pins (RX, TX)
+SoftwareSerial ultraSerial(12, 8); // RX on pin 8(white), TX on pin 12(yellow)
+unsigned long buzzerStartTime; // Stores when the buzzer was activated
+bool buzzerOn = false;     // Tracks if buzzer is currently active
+// Define pins
+float Volts;   // Read the analog value form sensor & Convert to Volts
+  float Distance;
+//int Distance;   //Convert the Volts to Distance
+const int AC_MAX = 238;
+const int AC_MIN = 165;
+float volt_AC;
+//const int SensorPin = 12;//A0;
+const int ready_calib = A1;
+const int buz_Pin = A2;
+const int water_full = 9;
+const int water_red = A0;
+const int water_yellow = 11;
+const int water_blue = 10;
+const int calib_but = 6;
+const int pump = 13;
+const int manual_calib = 7;
+int addr =0;
+const unsigned long BUZZER_DURATION = 1000;
+const int dip_1 = 2;
+const int dip_2 = 3;
+const int dip_3 = 4;
+const int dip_4 = 5;
+int c_it;
+int tankSize = -1; // Default: invalid
+int buz_o=0;
+const int voltagePin = A3;
+// Calibration factor – adjust this based on your setup and true AC voltage
+float calibration = 5.0;  // Try 5.0 to 5.3 depending on module
+
+///////////////////////distance function//////////////////////////////////////////
+
+
+
+float readA02Distance() 
+{
+
+unsigned char data[4] = {};
+float distance = -1.0; // Default error value
+// Request measurement
+unsigned char cmd[4] = {0xFF, 0x01, 0x00, 0x00};
+ultraSerial.write(cmd, 4);
+  
+// Wait for response (adjust delay based on your needs)
+
+delay(100);
+// Read response if available
+  if (ultraSerial.available() >= 4) 
+  
+{
+    
+for (int i = 0; i < 4; i++) 
+
+{
+      data[i] = ultraSerial.read();
+    
+}
+
+
+if (data[0] == 0xFF) {
+// Verify checksum
+int sum = (data[0] + data[1] + data[2]) & 0x00FF;
+
+if (sum == data[3]) {
+distance = ((data[1] << 8) + data[2]) / 10.0; // Convert to cm
+
+
+}
+
+}
+
+}
+  
+  return distance;
+}
+
+/////////////////////////////////////////////distance function end////////////////////////////////////
+
+void setup() 
+
+{
+
+lcd.init();  
+lcd.backlight();                    // initialize the lcd 
+Serial.begin(9600);  
+ultraSerial.begin(9600);
+Serial.println("Tank Size Reader - Ready");
+Serial.print("SOMETHING.....");
+delay(1500);
+pinMode(ready_calib,OUTPUT);
+pinMode(water_full,OUTPUT);
+pinMode(water_red,OUTPUT);
+pinMode(water_yellow,OUTPUT);
+pinMode(water_blue,OUTPUT);
+pinMode(pump,OUTPUT);
+pinMode(manual_calib,INPUT);
+pinMode(buz_Pin,OUTPUT);
+//pinMode(auto_calib,INPUT);
+pinMode(calib_but,INPUT);
+
+pinMode(dip_1,INPUT_PULLUP);
+pinMode(dip_2,INPUT_PULLUP);
+pinMode(dip_3,INPUT_PULLUP);
+pinMode(dip_4,INPUT_PULLUP);
+//
+
+digitalWrite(buz_Pin,LOW);
+digitalWrite(calib_but,LOW);
+digitalWrite(water_red,LOW);
+digitalWrite(water_yellow,LOW);
+digitalWrite(water_blue,LOW);
+digitalWrite(water_full,HIGH);
+
+delay(5000);
+//
+c_it = check_calib();
+//
+intro();
+
+digitalWrite(water_full,LOW);
+lcd.print("READY");
+delay(500);
+
+}
+
+void loop() 
+
+{
+
+c_it = check_calib();
+Distance = readA02Distance();
+//float distance;
+Serial.println(Distance);
+Serial.print("cm");
+  // if (Distance >= 0) {
+  //   Serial.print("Distance: ");
+  //   distance = Distance;
+  //   Serial.print(distance);
+  //   Serial.println(" cm");
+  // } 
+  // else {
+  //   Serial.println("Error reading distance");
+  //   //distance=0;
+  //   lcd.home();
+  //   lcd.clear();
+  //   lcd.setCursor(0,0);
+  //   //lcd.print("INVALID sensor!");
+
+
+delay(200);
+
+  // }
+
+
+
+
+//Distance = Volts*42.68537;   //Convert the Volts to Distance
+//
+//volt_AC = analogRead(volt_sense)*0.0048828125;
+//
+//volt_AC*= 50;
+
+////////////////////////////////////////////////////////////////////////////////ZMPT1 VOLTAGE SENSOR/////////////////////////////////////////////////////
+
+
+volt_AC = getVoltage();
+  Serial.print("Voltage (AC RMS): ");
+  Serial.print(volt_AC);
+  Serial.println(" V");
+
+  delay(1000); // 1-second interval
+
+
+
+
+
+//////////////////////////////////////////////////////////////////////////////////////ZMPT///////////////////////////////////
+
+
+
+
+
+
+delay(70);
+
+if(c_it==1) 
+
+{
+
+load_manual();  //MANUAL CALIBRAATION
+Serial.println(volt_AC); 
+}
+
+//if(c_it==2) 
+else {
+  load_auto(); // AUTO CALIBRATION
+Serial.println(volt_AC); 
+}
+
+
+
+
+
+} // end of main loop
+
+
+
+int check_calib()
+
+{ 
+  int check=0;
+if(digitalRead(manual_calib)==HIGH)
+{
+
+check =1;
+
+}
+
+//else if(digitalRead(auto_calib)==HIGH)
+
+else
+{
+
+check =2;
+}
+return check;
+} // end of calibation
+ 
+ void load_manual()
+
+
+ {
+
+  bool sw1 = !digitalRead(dip_1);
+  bool sw2 = !digitalRead(dip_2);
+  bool sw3 = !digitalRead(dip_3);
+  bool sw4 = !digitalRead(dip_4);
+
+  // Combine into a 4-bit binary pattern (e.g., 1110)
+  int pattern = (sw1 << 3) | (sw2 << 2) | (sw3 << 1) | sw4;
+  
+  switch (pattern) {
+    case 0b1110: tankSize = 79;  break;  // 1110 = 79cm
+    case 0b1101: tankSize = 97;  break;  // 1101 = 97cm
+    case 0b1011: tankSize = 120; break;  // 1011 = 120cm
+    case 0b0111: tankSize = 130; break;  // 0111 = 130cm
+    case 0b0011: tankSize = 135; break;  // 0011 = 135cm
+    case 0b0101: tankSize = 150; break;  // 0101 = 150cm
+    case 0b1001: tankSize = 168; break;  // 1001 = 168cm
+    case 0b0110: tankSize = 213; break;  // 0110 = 213cm
+    default: tankSize = -1;       // Invalid combination
+  }
+
+  // Print result
+
+Serial.print("TANK SIZE");
+Serial.print(sw1); Serial.print(sw2); Serial.print(sw3); Serial.print(sw4);
+//lcd.clear();
+lcd.home();
+lcd.setCursor(0,0);
+lcd.print("TANK SIZE");
+//lcd.setCursor(6,0);
+//lcd.print(sw1);lcd.print(sw2);lcd.print(sw3);lcd.print(sw4);
+
+lcd.setCursor(13,0);
+lcd.print(tankSize);
+lcd.setCursor(15,0);
+lcd.print(".");
+//lcd.print("cm");
+
+lcd.setCursor(0,1);
+lcd.print("WATER LEV:");
+//lcd.print(tankSize);
+lcd.print(Distance);
+//lcd.print("cm");
+pump_water(tankSize, Distance);
+  
+if (tankSize != -1) 
+{
+    Serial.print(" | Tank Size: ");
+    Serial.print(tankSize);
+   // Serial.println("cm");
+} 
+else {
+    Serial.println(" | ERROR: Invalid DIP combination");
+}
+
+
+}
+
+void load_auto()
+
+ {
+//lcd.clear();
+int old_value = EEPROM.read(addr);
+lcd.home();
+lcd.setCursor(0,0);
+lcd.print("CALIBR:   ");
+Serial.println("CALIBR:");
+//
+lcd.setCursor(10,0);
+lcd.print("AUTO:  ");
+lcd.print(old_value);
+//lcd.print("cm");
+Serial.print(" AUTO");
+// int old_value = EEPROM.read(addr);
+delay(100);
+lcd.setCursor(0,1);
+lcd.print("LEVEL:");
+lcd.setCursor(13,1);
+lcd.print(Distance);
+//lcd.print("cm");
+
+pump_water(old_value, Distance);
+// lcd.print(" || ");
+// lcd.print("N ");
+// lcd.print(Distance);
+// lcd.print(" cm");
+delay(30);  
+
+if(digitalRead(calib_but)==HIGH)
+  
+{
+  
+delay(10);
+lcd.clear();
+digitalWrite(ready_calib,HIGH);
+delay(300);
+lcd.setCursor(0,0);   
+lcd.print("Clearing old dat");
+// CLEAR EEPROM
+
+for (int i = 0; i < 1024; i++) 
+{
+    EEPROM.write(i, 0);
+}
+  
+lcd.clear();
+delay(100);
+lcd.setCursor(0, 0);
+lcd.print("OLD DATA CLEARED");
+lcd.setCursor(0, 1);
+lcd.print("SUCCESSFULLY");
+Serial.println("OLD DATA CLEARED");
+Serial.println("SUCCESSFULLY");
+
+
+EEPROM.write(addr, Distance);
+
+delay(1500);
+lcd.clear();
+lcd.setCursor(0,0);
+lcd.print("NEW VALUE: ");
+lcd.setCursor(13,0);
+lcd.print(Distance);
+lcd.setCursor(9,1);
+lcd.print("ADDED");
+delay(500);
+lcd.clear();
+lcd.setCursor(0,0);
+Serial.println("NEW VALUE:");
+lcd.setCursor(13,0);
+Serial.print(Distance);
+lcd.setCursor(0,7);
+Serial.println("ADDED");
+digitalWrite(ready_calib,LOW);
+
+}
+
+else {
+
+    digitalWrite(ready_calib,LOW);
+}
+  
+}
+
+void pump_water(int tank_s, float water_level)
+
+{
+
+
+if(water_level<tank_s*0.25 || water_level<=1)
+{
+// lowest level
+// pump water
+digitalWrite(water_red,HIGH);
+digitalWrite(water_yellow,LOW);
+digitalWrite(water_blue,LOW);
+digitalWrite(water_full,LOW);
+
+Serial.print("tank size");
+Serial.println(tank_s);
+Serial.print("current water_level distance");
+Serial.println(water_level);
+pump_water_act(pump);
+buzzerOn = false;
+// if(buz_o==0){
+  digitalWrite(buz_Pin, LOW);
+  //}
+}
+
+
+//
+else if(water_level>tank_s*0.25 && water_level<tank_s*0.50 )
+{
+// 2nd lowest level, 50%
+// pump water
+digitalWrite(water_yellow,HIGH);
+digitalWrite(water_red,HIGH);
+digitalWrite(water_blue,LOW);
+digitalWrite(water_full,LOW);
+pump_water_act(pump);
+buzzerOn = false;
+//  if(buz_o==0){
+  
+  digitalWrite(buz_Pin, LOW);
+  
+  //}
+
+}
+
+
+//
+else if(water_level>tank_s*0.50 && water_level<tank_s*0.90 )
+{
+// 3rd, 75% lowest level
+// pump water
+digitalWrite(water_red,HIGH);
+digitalWrite(water_yellow,HIGH);
+digitalWrite(water_blue,HIGH);
+digitalWrite(water_full,LOW);
+pump_water_act(pump);
+buzzerOn = false;
+ if(buz_o==0){digitalWrite(buz_Pin, LOW);}
+}
+
+//
+else if(water_level>(tank_s*0.90) )
+{
+  buz_o=1;
+// highest, 100% lowest level
+// stop pump water
+//digitalWrite(buz_Pin,HIGH);
+
+ if (!buzzerOn && buz_o==1) {
+      digitalWrite(buz_Pin, HIGH);
+      buzzerOn = true;
+      buzzerStartTime = millis();
+    }
+
+
+stop_pump_water(pump);
+digitalWrite(water_full,HIGH);
+digitalWrite(water_red,HIGH);
+digitalWrite(water_yellow,HIGH);
+digitalWrite(water_blue,HIGH);
+//delay(1500);
+//digitalWrite(buz_Pin,LOW);
+if (buzzerOn && (millis() - buzzerStartTime >= BUZZER_DURATION)) {
+    digitalWrite(buz_Pin, LOW);
+   // 
+   //buzzerOn = false;
+   buz_o=0;
+  }
+
+
+}
+//
+else {buz_o=0;}
+
+}
+
+void pump_water_act(const int pump_p)
+{
+
+if(c_it==2){
+
+
+    if(volt_AC >AC_MIN && volt_AC <AC_MAX)
+{
+digitalWrite(pump_p, HIGH);
+}
+
+
+else
+{
+  // digitalWrite(pump_p, LOW);
+  // lcd.clear();
+  // delay(5);
+  // lcd.home();
+  // lcd.setCursor(2,0);
+
+  // lcd.print("BAD VOLTAGE.");
+  // lcd.setCursor(0,1);
+  // lcd.print("PUMP STOP AUTO!");
+  // delay(2500);
+  //  lcd.clear();
+}
+
+}
+//   if(volt_AC >AC_MIN && volt_AC <AC_MAX)
+// {
+// digitalWrite(pump_p, HIGH);
+
+// }
+// else
+// {
+//   digitalWrite(pump_p, LOW);
+//   lcd.clear();
+//   delay(5);
+//   lcd.home();
+//   lcd.setCursor(2,0);
+
+//   lcd.print("BAD VOLTAGE.");
+//   lcd.setCursor(0,1);
+//   lcd.print("PUMP STOP AUTO!");
+//   delay(100);
+//    lcd.clear();
+// }
+
+}
+void stop_pump_water(const int pump_p)
+{
+digitalWrite(pump_p, LOW);
+
+}
+
+ void display()
+
+{
+
+lcd.setCursor(0,0);
+lcd.print("MODE:");
+lcd.setCursor(0,1);
+
+}
+
+
+
+void intro()
+{
+
+
+lcd.clear();
+delay(100);
+lcd.setCursor(1, 0);
+lcd.print("Max Auto Water ");
+delay(20);
+lcd.setCursor(0, 1);
+lcd.print("Level Controller");
+delay(3000);
+lcd.clear();
+
+// lcd.setCursor(1, 0);
+
+// lcd.print("080333417722");
+// lcd.setCursor(1, 1);
+// lcd.print("08032051780");
+// delay(4000);
+// lcd.clear();
+lcd.setCursor(1, 0);
+lcd.print("TECHNICAL ISSUE");
+lcd.setCursor(3, 1);
+lcd.print("REPORT TO");
+delay(1500);
+lcd.clear();
+lcd.setCursor(0, 0);
+lcd.print("hamladsystems@gmail");
+delay(3500);
+lcd.clear();
+lcd.setCursor(2, 0);
+lcd.print("08032051780");
+lcd.setCursor(2, 1);
+lcd.print("08033417722");
+delay(4500);
+lcd.clear();
+lcd.setCursor(0, 0);
+lcd.print("SYSTEM INITIALIZING");
+delay(500);
+lcd.setCursor(0, 1);
+for(int i=0; i<16; i++)
+{
+lcd.setCursor(i, 1);
+lcd.print(".");
+delay(50);
+delay(250);
+}
+lcd.clear();
+lcd.setCursor(5, 0);
+lcd.print("READY");
+delay(1000);
+Serial.println("ready");
+}
+
+
+float getVoltage() {
+  int sensorValue;
+  float maxValue = 0;
+  float minValue = 1023;
+
+  // Sample waveform for a short period to get peak-to-peak value
+  for (int i = 0; i < 1000; i++) {
+    sensorValue = analogRead(voltagePin);
+    if (sensorValue > maxValue) {
+      maxValue = sensorValue;
+    }
+    if (sensorValue < minValue) {
+      minValue = sensorValue;
+    }
+  }
+
+  // Calculate peak-to-peak voltage
+  float Vpp = (maxValue - minValue) * (5.0 / 1023.0);  // Assuming 5V Arduino
+  float Vrms = (Vpp / 2.0) * 0.707;
+
+  // Scale RMS to actual voltage using calibration factor
+  float actualVoltage = Vrms * calibration;
+
+  return actualVoltage;
+}

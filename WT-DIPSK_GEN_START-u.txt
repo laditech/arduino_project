@@ -1,0 +1,104 @@
+const int receiverPin = 4;  // Pin connected to the receiver module
+const int starterRelay = 8;     // Pin connected to the relay module
+const int ignitionRelay = 10;// Relay to keep ignition ON
+const int killRelay = 11;    // Relay to stop the generator
+
+
+
+
+bool generatorState = false;  // Tracks the generator state (OFF by default)
+bool lastButtonState = LOW;   // Tracks the last state of the button
+
+void setup() {
+  pinMode(receiverPin, INPUT_PULLUP);  // Set receiver pin as input
+  //pinMode(relayPin, OUTPUT);    // Set relay pin as output
+  //digitalWrite(relayPin, LOW);  // Ensure relay is OFF initially
+  digitalWrite(receiverPin, HIGH);
+///////////////////////////////////////////////////////////
+
+  pinMode(starterRelay, OUTPUT);
+  pinMode(ignitionRelay, OUTPUT);
+  pinMode(killRelay, OUTPUT);
+  digitalWrite(starterRelay, LOW);
+  digitalWrite(ignitionRelay, LOW);
+  digitalWrite(killRelay, LOW);
+  delay(1000);
+  Serial.begin(9600);
+  digitalWrite(receiverPin, HIGH);
+//////////////////////////////////////////////////////////////////
+ // Serial.begin(9600);           // Start serial communication for debugging
+}
+
+void loop() {
+  // Read the current state of the receiver (button press)
+  bool currentButtonState = digitalRead(receiverPin);
+
+  // Check if button A is pressed (start generator)
+  //if (currentButtonState == LOW && lastButtonState == LOW) {
+
+    //
+     if (currentButtonState == LOW && lastButtonState == LOW) {
+
+    //   if (currentButtonState == HIGH && lastButtonState == LOW) {
+    if (!generatorState) {
+      //digitalWrite(relayPin, HIGH);  // Turn ON the relay (start generator)
+      digitalWrite(ignitionRelay, HIGH); // Turn ON ignition
+    Serial.print("ign on");
+    delay(1500);
+     digitalWrite(starterRelay, HIGH);  // Crank the generator
+    Serial.print("start cracking..");
+    delay(3700);  // Crank for 3 seconds
+
+    digitalWrite(starterRelay, LOW);   // Stop cranking
+
+
+
+
+      generatorState = true;         // Update generator state
+  // lastButtonState == currentButtonState;
+////////////////////////////////////////////
+
+
+
+  //  // digitalWrite(starterRelay, HIGH);  // Crank the generator
+  //   Serial.print("GEN ON1");
+  //   delay(3000);  // Crank for 3 seconds
+
+  //   digitalWrite(starterRelay, LOW);   // Stop cranking
+
+  //   Serial.print("stop cracking");
+
+  //  Serial.println("Generator STARTED");
+
+      /////////////////////
+    }
+  }
+
+  // Check if button B is pressed (stop generator)
+  if (currentButtonState == HIGH && lastButtonState == HIGH) {
+    if (generatorState) {
+    //digitalWrite(starterRelay, LOW);  // Turn OFF the relay (stop generator)
+     // generatorState = false;       // Update generator state
+   
+
+
+     digitalWrite(killRelay, HIGH); // Activate kill switch (ground ignition coil)
+    delay(2000); // Hold kill switch for 2 seconds
+    digitalWrite(killRelay, LOW); // Release kill switch
+     Serial.print("GEN Off total");
+    digitalWrite(ignitionRelay, LOW); // Turn OFF ignition relay
+     Serial.print("ignition-off");
+    
+    
+       Serial.println("Generator STOPPED");
+    
+    generatorState = false; 
+    }
+  }
+
+  // Update the last button state
+  lastButtonState = currentButtonState;
+
+  // Small delay to debounce the button
+  delay(100);
+}
